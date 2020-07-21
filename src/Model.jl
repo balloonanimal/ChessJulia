@@ -22,17 +22,7 @@ function Base.iterate(bb::BitBoard, state=1)
 end
 
 function Base.show(io::IO, bb::BitBoard)
-    s = ""
-    for row in 8:-1:1
-        for col in 1:8
-            c = bb[8 * (row - 1) + col] != 0 ? "1" : "0"
-            s *= c
-        end
-        if row != 1
-            s *= "\n"
-        end
-    end
-    print(io, s)
+    print(io, bitstring(bb.board))
 end
 
 (&)(b1::BitBoard, b2::BitBoard) = BitBoard(b1.board & b2.board)
@@ -56,7 +46,8 @@ const SQUARES = [
 
 const SQUARE_MAPPING = Dict(sqr => idx for (sqr, idx) in zip(SQUARES, 1:64))
 
-board_sqr(s::AbstractString) = SQUARE_MAPPING[s]
+alg_sqr_to_board(s::AbstractString) = SQUARE_MAPPING[s]
+board_to_alg_sqr(bb::BitBoard) = SQUARES[trailing_zeros(bb.board) + 1]
 
 # TODO: Castling should be some sort of enum
 # @enum Castling begin
@@ -89,8 +80,148 @@ struct ChessBoard
     move_count      :: Int64
 end
 
+const BOARDS = [
+    :w_pawns, :w_knights, :w_bishops, :w_rooks, :w_queens, :w_kings,
+    :b_pawns, :b_knights, :b_bishops, :b_rooks, :b_queens, :b_kings
+]
+
+const piece_to_symbol = Dict(
+    :w_pawns => "♙",
+    :w_knights => "♘",
+    :w_bishops => "♗",
+    :w_rooks => "♖",
+    :w_queens => "♕",
+    :w_kings => "♔",
+    :b_pawns => "♟",
+    :b_knights => "♞",
+    :b_bishops => "♝",
+    :b_rooks => "♜",
+    :b_queens => "♛",
+    :b_kings => "♚"
+)
+const piece_to_char = Dict(
+    :w_pawns => "P",
+    :w_knights => "N",
+    :w_bishops => "B",
+    :w_rooks => "R",
+    :w_queens => "Q",
+    :w_kings => "K",
+    :b_pawns => "p",
+    :b_knights => "n",
+    :b_bishops => "b",
+    :b_rooks => "r",
+    :b_queens => "q",
+    :b_kings => "k"
+)
+
+function to_mailbox(cb::ChessBoard)
+    mb = Dict{Int64, Symbol}()
+    for board in BOARDS
+        b::BitBoard = getfield(cb, board)
+        for sqr in 1:64
+            if b[sqr] ≠ 0
+                other_board = get(mb, sqr, nothing)
+                if other_board == nothing
+                    mb[sqr] = board
+                else
+                    throw(ParseError("Chessboard has two pieces ($board, $other_board) in square $sqr"))
+                end
+            end
+        end
+    end
+    mb
+end
+
+# ┌ ─ ┬ ┐ │ └ ─ ┴ ┘ ├ ─ ┼ ┤
+function Base.show(io::IO, cb::ChessBoard)
+    mb = to_mailbox(cb)
+    function piece(sqr)
+        p = get(mb, sqr, nothing)
+        if p == nothing
+            " "
+        else
+            piece_to_symbol[p]
+        end
+    end
+
+    # board representation
+    s = "┌───" * repeat("┬───", 7) * "┐\n"
+    for row in 8:-1:1
+        for col in 1:8
+            s *= "│ $(piece((row - 1) * 8 + col)) "
+        end
+        s *= "│\n"
+        if row ≠ 1
+            s *= "├───" * repeat("┼───", 7) * "┤\n"
+        end
+    end
+    s *= "└───" * repeat("┴───", 7) * "┘\n"
+
+    # additional info
+    s *= board_to_fen_extras(cb)
+    print(io, s)
+end
+
+function board_to_fen(cb::ChessBoard)
+    mb = to_mailbox(cb)
+    s = ""
+    for row in 8:-1:1
+        empties = 0
+        for col in 1:8
+            sqr = (row - 1) * 8 + col
+            piece = get(mb, sqr, nothing)
+            if piece ≠ nothing
+                if empties > 0
+                    s *= "$empties"
+                    empties = 0
+                end
+                s *= piece_to_char[piece]
+            else
+                empties += 1
+            end
+        end
+        if empties > 0
+            s *= "$empties"
+        end
+        if row ≠ 1
+            s *= "/"
+        else
+            s *= " "
+        end
+    end
+    s *= board_to_fen_extras(cb)
+    s
+end
+
+function board_to_fen_extras(cb::ChessBoard)
+    s = ""
+    # move
+    s *= "$(cb.whose_move ? "b" : "w") "
+    # castling
+    if cb.w_castle == cb.b_castle == 0
+        s *= "- "
+    else
+        s *= "$(cb.w_castle == 2 || cb.w_castle == 3 ? "K" : "")"
+        s *= "$(cb.w_castle == 1 || cb.w_castle == 3 ? "Q" : "")"
+        s *= "$(cb.b_castle == 2 || cb.b_castle == 3 ? "k" : "")"
+        s *= "$(cb.b_castle == 1 || cb.b_castle == 3 ? "q" : "") "
+    end
+    # en passant
+    s *= "$(cb.en_passant_sqr == nothing ? "-" : board_to_alg_sqr(cb.en_passant_sqr)) "
+    # moves
+    s *= "$(cb.half_move_count) $(cb.move_count)"
+    s
+end
+
 struct ParseError <: Exception
     msg :: AbstractString
+end
+
+function ChessBoard()
+    ChessBoard(BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0),
+               BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0),
+               BitBoard(0), BitBoard(0), BitBoard(0), BitBoard(0),
+               0, 0, false, nothing, 0, 0)
 end
 
 function ChessBoard(fen::AbstractString)
@@ -228,7 +359,7 @@ function parse_fen_en_passant(en_passant_str::AbstractString)
         return nothing
     end
     try
-        BitBoard(1 << (board_sqr(en_passant_str) - 1))
+        BitBoard(1 << (alg_sqr_to_board(en_passant_str) - 1))
     catch e
         throw(ParseError("En Passant square malformed"))
     end

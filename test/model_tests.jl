@@ -15,6 +15,7 @@
     @test board_1.en_passant_sqr == nothing
     @test board_1.half_move_count == 0
     @test board_1.move_count == 1
+    @test CJ.Model.board_to_fen(board_1) == board_1_fen
 
     board_2_fen = "2kr1b1r/pp1q1ppp/2n2n2/6B1/2PpN1b1/P7/1P3PPP/2RBK1NR b K c3 0 10"
     board_2 = CJ.Model.ChessBoard(board_2_fen)
@@ -30,6 +31,25 @@
     @test board_2.en_passant_sqr.board == 0x0000000000040000
     @test board_2.half_move_count == 0
     @test board_2.move_count == 10
+    @test CJ.Model.board_to_fen(board_2) == board_2_fen
+end
+
+@testset "Mailbox Conversion" begin
+    board_1_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    board_1 = CJ.Model.ChessBoard(board_1_fen)
+    board_1_mb = CJ.Model.to_mailbox(board_1)
+    @test length(board_1_mb) == 32
+    @test board_1_mb[1] == :w_rooks
+    @test board_1_mb[10] == :w_pawns
+    @test get(board_1_mb, 19, nothing) == nothing
+
+    board_2_fen = "2kr1b1r/pp1q1ppp/2n2n2/6B1/2PpN1b1/P7/1P3PPP/2RBK1NR b K c3 0 10"
+    board_2 = CJ.Model.ChessBoard(board_2_fen)
+    board_2_mb = CJ.Model.to_mailbox(board_2)
+    @test length(board_2_mb) == 27
+    @test get(board_2_mb, 1, nothing) == nothing
+    @test board_2_mb[10] == :w_pawns
+    @test get(board_2_mb, 19, nothing) == nothing
 end
 
 end

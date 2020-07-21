@@ -132,7 +132,6 @@ function to_mailbox(cb::ChessBoard)
     mb
 end
 
-# ┌ ─ ┬ ┐ │ └ ─ ┴ ┘ ├ ─ ┼ ┤
 function Base.show(io::IO, cb::ChessBoard)
     mb = to_mailbox(cb)
     function piece(sqr)
@@ -145,20 +144,21 @@ function Base.show(io::IO, cb::ChessBoard)
     end
 
     # board representation
-    s = "┌───" * repeat("┬───", 7) * "┐\n"
+    s = "  ┌───┬───┬───┬───┬───┬───┬───┬───┐\n"
     for row in 8:-1:1
+        s *= "$(row) │"
         for col in 1:8
-            s *= "│ $(piece((row - 1) * 8 + col)) "
+            s *= " $(piece((row - 1) * 8 + col)) │"
         end
-        s *= "│\n"
         if row ≠ 1
-            s *= "├───" * repeat("┼───", 7) * "┤\n"
+            s *= "\n  ├───┼───┼───┼───┼───┼───┼───┼───┤\n"
         end
     end
-    s *= "└───" * repeat("┴───", 7) * "┘\n"
+    s *= "\n  └───┴───┴───┴───┴───┴───┴───┴───┘\n"
+    s *= "    a   b   c   d   e   f   g   h\n"
 
     # additional info
-    s *= board_to_fen_extras(cb)
+    s *= "    " * board_to_fen_extras(cb)
     print(io, s)
 end
 

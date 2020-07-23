@@ -2,3 +2,6 @@ name = "ChessJulia"
 uuid = "7e32ac62-bc11-4473-b9f4-6f8752dd6d39"
 authors = ["Zach Rothenberg <zrothenberg1@gmail.com>"]
 version = "0.1.0"
+
+[deps]
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"

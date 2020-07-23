@@ -1,5 +1,7 @@
 module ChessJulia
 
-include("Model.jl")
+include("types.jl")
+include("BitBoard.jl")
+include("ChessBoard.jl")
 
 end # module

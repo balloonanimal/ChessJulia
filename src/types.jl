@@ -2,6 +2,7 @@
 abstract type Color end
 struct White <: Color end
 struct Black <: Color end
+Color_T = Type{T} where {T<:Color}
 
 abstract type Piece end
 abstract type Pawn <: Piece end
@@ -10,10 +11,8 @@ abstract type Bishop <: Piece end
 abstract type Rook <: Piece end
 abstract type Queen <: Piece end
 abstract type King <: Piece end
+Piece_T = Type{T} where {T<:Piece}
 
-struct BitBoard
-    board :: UInt64
-end
 
 struct Square
     sqr_idx :: UInt8
@@ -24,8 +23,23 @@ struct Square
     end
 end
 
+struct BitBoard <: AbstractSet{Square}
+    board :: UInt64
+    BitBoard(board) = new(board)
+end
 
-struct ChessBoard
+struct Move
+    # https://www.chessprogramming.org/Encoding_Moves
+    # stored as
+    #   0-5: from square
+    #   6-11: to square
+    #   12: promotion?
+    #   12: capture?
+    #   13-14: special bits
+    packed_move :: UInt16
+end
+
+mutable struct ChessBoard
     our_pieces      :: BitBoard
     their_pieces    :: BitBoard
     pawns           :: BitBoard
@@ -38,7 +52,7 @@ struct ChessBoard
 
     castling        :: UInt8
 
-    active_color    :: Type{T} where {T <: Color}
+    active_color    :: Color_T
     # TODO: look into having Square(0) be a sentinel value
     en_passant_sqr  :: Union{Square, Nothing}
     half_move_count :: Int64
@@ -46,7 +60,7 @@ struct ChessBoard
 end
 
 ##### Constructors
-BitBoard(board::Integer) = BitBoard(UInt64(board))
+# BitBoard(board::Integer) = BitBoard(UInt64(board))
 # TODO: look into the efficitency of the 63 &
 BitBoard(sqr::Square) = BitBoard(UInt64(1) << (63 & (sqr.sqr_idx - 1)))
 
@@ -57,3 +71,5 @@ function Square(s::AbstractString)
     end
     Square(UInt8(s[2] - '1') + 1, UInt8(s[1] - 'a') + 1)
 end
+
+Move(from::Square, to::Square) = Move(UInt(from) - 1 + ((UInt(to) - 1) << 6))

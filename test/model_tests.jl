@@ -15,6 +15,8 @@
 
     @test ([string(CJ.Square(n)) for n in 1:64] ==
            vec([x * y for x in 'a':'h', y in '1':'8']))
+    @test (vec([UInt(CJ.Square(x * y)) for x in 'a':'h', y in '1':'8']) ==
+           [n for n in 1:64])
 
     @test_throws AssertionError CJ.Square(-1)
     @test_throws AssertionError CJ.Square(0)
@@ -27,21 +29,60 @@ end
     b2 = CJ.BitBoard(2)
     b3 = CJ.BitBoard(3)
 
-    @test b1 | b0 == b1
-    @test b1 | b2 == b3
-    @test b1 & b3 == b1
-    @test b1 & b2 == b0
+    @test b1 ∪ b0 == b1
+    @test b1 ∪ b2 == b3
+    @test b1 ∩ b3 == b1
+    @test b1 ∩ b2 == b0
 
-    @test b1[CJ.Square(1)]
-    @test !b1[CJ.Square(2)]
-    @test !b2[CJ.Square(1)]
-    @test b2[CJ.Square(2)]
-    @test !any(b0[CJ.Square(i)] for i in 1:64)
+    @test CJ.Square(1) ∈ b1
+    @test CJ.Square(2) ∉ b1
+    @test CJ.Square(1) ∉ b2
+    @test CJ.Square(2) ∈ b2
+    @test !any(CJ.Square(i) ∈ b0 for i in 1:64)
 
-    @test string(b1) == "0000000000000000000000000000000000000000000000000000000000000001"
-    @test string(b2) == "0000000000000000000000000000000000000000000000000000000000000010"
+    @test string(b1) == """........
+                           ........
+                           ........
+                           ........
+                           ........
+                           ........
+                           ........
+                           x......."""
+    @test string(b2) == """........
+                           ........
+                           ........
+                           ........
+                           ........
+                           ........
+                           ........
+                           .x......"""
 end
 
+@testset "Move object" begin
+    m1 = CJ.Move(CJ.Square("a2"), CJ.Square("a3"))
+    @test UInt(m1) == 0b0000_010000_001000
+    @test CJ.from(m1) == CJ.Square("a2")
+    @test CJ.to(m1) == CJ.Square("a3")
+    @test string(m1) == "a2 => a3"
+
+    m2 = CJ.Move(CJ.Square("a8"), CJ.Square("h1"))
+    @test UInt(m2) == 0b0000_000111_111000
+    @test CJ.from(m2) == CJ.Square("a8")
+    @test CJ.to(m2) == CJ.Square("h1")
+    @test string(m2) == "a8 => h1"
+
+    m3 = CJ.Move(CJ.Square("c7"), CJ.Square("c8"), CJ.Bishop)
+    @test UInt(m3) == 0b0101_111010_110010
+    @test CJ.from(m3) == CJ.Square("c7")
+    @test CJ.to(m3) == CJ.Square("c8")
+    @test CJ.promotion(m3) == CJ.Bishop
+
+    m4 = CJ.Move(CJ.Square("d7"), CJ.Square("d8"), CJ.Queen)
+    @test UInt(m4) == 0b1101_111011_110011
+    @test CJ.from(m4) == CJ.Square("d7")
+    @test CJ.to(m4) == CJ.Square("d8")
+    @test CJ.promotion(m4) == CJ.Queen
+end
 
 @testset "FEN conversion" begin
     @testset "FEN move" begin
@@ -88,7 +129,7 @@ end
     @test board_1.en_passant_sqr == nothing
     @test board_1.half_move_count == 0
     @test board_1.move_count == 1
-    # @test CJ.fen(board_1) == board_1_fen
+    @test CJ.fen(board_1) == board_1_fen
 
     # Nolot P1
     board_2_fen = "r3qb1k/1b4p1/p2pr2p/3n4/Pnp1N1N1/6RP/1B3PP1/1B1QR1K1 w - - 0 1"
@@ -107,7 +148,7 @@ end
     @test board_2.en_passant_sqr == nothing
     @test board_2.half_move_count == 0
     @test board_2.move_count == 1
-    # @test CJ.fen(board_2) == board_2_fen
+    @test CJ.fen(board_2) == board_2_fen
     end
 end
 
@@ -116,8 +157,8 @@ end
     board_1 = CJ.ChessBoard(board_1_fen)
     board_1_mb = CJ.to_mailbox(board_1)
     @test length(board_1_mb) == 32
-    @test board_1_mb[CJ.Square("a1")] == (CJ.White, CJ.Rook)
-    @test board_1_mb[CJ.Square("b2")] == (CJ.White, CJ.Pawn)
+    @test board_1_mb[CJ.Square("a1")] == (CJ.Rook, CJ.White)
+    @test board_1_mb[CJ.Square("b2")] == (CJ.Pawn, CJ.White)
     @test get(board_1_mb, CJ.Square("c3"), nothing) == nothing
 
     board_2_fen = "r3qb1k/1b4p1/p2pr2p/3n4/Pnp1N1N1/6RP/1B3PP1/1B1QR1K1 w - - 0 1"
@@ -125,8 +166,8 @@ end
     board_2_mb = CJ.to_mailbox(board_2)
     @test length(board_2_mb) == 25
     @test get(board_2_mb, CJ.Square("a1"), nothing) == nothing
-    @test board_2_mb[CJ.Square("b2")] == (CJ.White, CJ.Bishop)
-    @test board_2_mb[CJ.Square("e6")] == (CJ.Black, CJ.Rook)
+    @test board_2_mb[CJ.Square("b2")] == (CJ.Bishop, CJ.White)
+    @test board_2_mb[CJ.Square("e6")] == (CJ.Rook, CJ.Black)
 end
 
 end

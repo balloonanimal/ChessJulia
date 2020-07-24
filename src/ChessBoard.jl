@@ -1,9 +1,9 @@
-import Base: UInt, ~
+import Base: UInt
 
 ##### Square Stuff
 @inline UInt(sqr::Square) = sqr.sqr_idx
-@inline rank(sqr::Square) = (UInt(sqr) - 1) ÷ 8 + 1
-@inline file(sqr::Square) = (UInt(sqr) - 1) % 8 + 1
+@inline rank(sqr::Square) = (UInt(sqr) - 0x1) ÷ 0x8 + 0x1
+@inline file(sqr::Square) = (UInt(sqr) - 0x1) % 0x8 + 0x1
 
 function show(io::IO, sqr::Square)
     print(io, ('a' + (file(sqr) - 1)) * ('1' + (rank(sqr) - 1)))
@@ -37,9 +37,17 @@ ascii_str(::Type{Queen}, ::Type{Black}) = "q"
 ascii_str(::Type{King}, ::Type{Black}) = "k"
 
 ##### Color Stuff
-(~)(c::Type{T}) where {T<:Color} = c == White ? Black : White
+(-)(c::Color_T) = c == White ? Black : White
 
 ##### ChessBoard Stuff
+board(cb::ChessBoard, c::Color_T) = c == cb.active_color ? :our_pieces : :their_pieces
+board(::ChessBoard, ::Type{Pawn}) = :pawns
+board(::ChessBoard, ::Type{Knight}) = :knights
+board(::ChessBoard, ::Type{Bishop}) = :bishops
+board(::ChessBoard, ::Type{Rook}) = :rooks
+board(::ChessBoard, ::Type{Queen}) = :queens
+board(cb::ChessBoard, c::Color_T, ::Type{King}) = c == :active_color ? :our_king : :their_king
+
 function fen(cb::ChessBoard)
     mb = to_mailbox(cb)
     s = ""
@@ -73,7 +81,7 @@ end
 
 function fen_metadata(cb::ChessBoard)
     # move
-    s = "$(cb.whose_move == White ? "w" : "b") "
+    s = "$(cb.active_color == White ? "w" : "b") "
     # castling
     if cb.castling == 0
         s *= "- "
@@ -84,7 +92,7 @@ function fen_metadata(cb::ChessBoard)
         s *= "$(cb.castling & 8 ≠ 0 ? "q" : "") "
     end
     # en passant
-    s *= "$(cb.en_passant_sqr == nothing ? "-" : board_to_alg_sqr(cb.en_passant_sqr)) "
+    s *= "$(cb.en_passant_sqr == nothing ? "-" : cb.en_passant_sqr) "
     # moves
     s *= "$(cb.half_move_count) $(cb.move_count)"
     s
@@ -150,40 +158,40 @@ function parse_fen_board(board_str::AbstractString)
             end
             square = Square(rank, file)
             if     val == 'p'
-                b_pieces |= square
-                pawns |= square
+                b_pieces = b_pieces ∪ square
+                pawns = pawns ∪ square
             elseif val == 'n'
-                b_pieces |= square
-                knights |= square
+                b_pieces = b_pieces ∪ square
+                knights = knights ∪ square
             elseif val == 'b'
-                b_pieces |= square
-                bishops |= square
+                b_pieces = b_pieces ∪ square
+                bishops = bishops ∪ square
             elseif val == 'r'
-                b_pieces |= square
-                rooks |= square
+                b_pieces = b_pieces ∪ square
+                rooks = rooks ∪ square
             elseif val == 'q'
-                b_pieces |= square
-                queens |= square
+                b_pieces = b_pieces ∪ square
+                queens = queens ∪ square
             elseif val == 'k'
-                b_pieces |= square
+                b_pieces = b_pieces ∪ square
                 b_king = square
             elseif val == 'P'
-                w_pieces |= square
-                pawns |= square
+                w_pieces = w_pieces ∪ square
+                pawns = pawns ∪ square
             elseif val == 'N'
-                w_pieces |= square
-                knights |= square
+                w_pieces = w_pieces ∪ square
+                knights = knights ∪ square
             elseif val == 'B'
-                w_pieces |= square
-                bishops |= square
+                w_pieces = w_pieces ∪ square
+                bishops = bishops ∪ square
             elseif val == 'R'
-                w_pieces |= square
-                rooks |= square
+                w_pieces = w_pieces ∪ square
+                rooks = rooks ∪ square
             elseif val == 'Q'
-                w_pieces |= square
-                queens |= square
+                w_pieces = w_pieces ∪ square
+                queens = queens ∪ square
             elseif val == 'K'
-                w_pieces |= square
+                w_pieces = w_pieces ∪ square
                 w_king = square
             else
                 throw(ParseError("Invalid character"))
@@ -264,47 +272,59 @@ function parse_fen_int(int_str::AbstractString)
     i
 end
 
+function piece_on(cb::ChessBoard, sqr::Square)
+    if sqr == cb.our_king
+        return (King, cb.active_color)
+    elseif sqr == cb.their_king
+        return (King, -cb.active_color)
+    end
+
+    board_color_pairs = ((cb.active_color, cb.our_pieces),
+                         (-cb.active_color, cb.their_pieces))
+    board_piece_pairs = ((Pawn, cb.pawns),
+                         (Knight, cb.knights),
+                         (Bishop, cb.bishops),
+                         (Rook, cb.rooks),
+                         (Queen, cb.queens))
+    for (color, c_board) in board_color_pairs
+        # there is not a piece of this color on this square
+        if sqr ∉ c_board
+            continue
+        end
+        # there is a piece, what is it?
+        for (piece, p_board) in board_piece_pairs
+            # not this piece
+            if sqr ∉ p_board
+                continue
+            end
+            return (piece, color)
+        end
+    end
+    nothing
+end
+
 function to_mailbox(cb::ChessBoard)
     # TODO: why doesn't this work?
     # mb = Dict{Square, Tuple{Type{T}, Type{S}}}() where {T <: Color, S <: Piece}
     mb = Dict{Square, Tuple{DataType, DataType}}()
-    function no_dup_insert!(sqr::Square, color::Type{T},
-                            piece::Type{S}) where {T <: Color, S <: Piece}
+    function no_dup_insert!(sqr::Square, piece::Piece_T, color::Color_T)
         other_piece = get(mb, sqr, nothing)
         if other_piece == nothing
-            mb[sqr] = (color, piece)
+            mb[sqr] = (piece, color)
         else
             throw(ParseError(
                 "Chessboard has two pieces ($color, $piece) $other_piece in square $sqr"))
         end
     end
 
-    board_color_pairs = ((cb.active_color, cb.our_pieces),
-                         (~cb.active_color, cb.their_pieces))
-    board_piece_pairs = ((Pawn, cb.pawns),
-                         (Knight, cb.knights),
-                         (Bishop, cb.bishops),
-                         (Rook, cb.rooks),
-                         (Queen, cb.queens))
     for si in 1:64
         sqr = Square(si)
-        for (color, c_board) in board_color_pairs
-            # there is not a piece of this color on this square
-            if !c_board[sqr]
-                continue
-            end
-            # there is a piece, what is it?
-            for (piece, p_board) in board_piece_pairs
-                # not this piece
-                if !p_board[sqr]
-                    continue
-                end
-                no_dup_insert!(sqr, color, piece)
-            end
+        piece = piece_on(cb, sqr)
+        if piece ≠ nothing
+            no_dup_insert!(sqr, piece[1], piece[2])
         end
     end
-    no_dup_insert!(cb.our_king, cb.active_color, King)
-    no_dup_insert!(cb.their_king, ~cb.active_color, King)
+   
     mb
 end
 
@@ -338,3 +358,67 @@ function Base.show(io::IO, cb::ChessBoard)
     s *= "    " * fen_metadata(cb)
     print(io, s)
 end
+
+# NOTE: assumes move is legal
+#       also checks for a piece on from sqr, maybe unchecked faster?
+function make_move!(cb::ChessBoard, mv::Move)
+    from_sqr, to_sqr = from(mv), to(mv)
+    p1 = piece_on(cb, from_sqr)
+    if p1 == nothing
+        # TODO: replace generic throw
+        throw("No piece to move!")
+    end
+    piece_1, color_1 = p1
+    if piece_1 == King
+        king = board(cb, color_1, King)
+        setproperty!(cb, king, from_sqr)
+    else
+        _remove_piece!(cb, from_sqr, piece_1, color_1)
+    end
+
+    p2 = piece_on(cb, to_sqr)
+    if p2 ≠ nothing
+        piece_2, color_2 = p2
+        _remove_piece!(cb, to_sqr, piece_2, color_2)
+    end
+
+    if p1 ≠ King
+        _add_piece!(cb, to_sqr, piece_1, color_1)
+    end
+
+    _switch_turn!(cb)
+end
+
+# NOTE: should never be called with King, assertion is internal logic
+function _add_piece!(cb::ChessBoard, sqr::Square,
+                     piece::Piece_T, color::Color_T)
+    @assert piece ≠ King
+    piece_board = board(cb, piece)
+    setproperty!(cb, piece_board, getproperty(cb, piece_board) ∪ sqr)
+    color_board = board(cb, color)
+    setproperty!(cb, color_board, getproperty(cb, color_board) ∪ sqr)
+    nothing
+end
+
+# NOTE: should never be called with King, assertion is internal logic
+function _remove_piece!(cb::ChessBoard, sqr::Square,
+                        piece::Piece_T, color::Color_T)
+    @assert piece ≠ King
+    piece_board = board(cb, piece)
+    setproperty!(cb, piece_board, getproperty(cb, piece_board) - sqr)
+    color_board = board(cb, color)
+    setproperty!(cb, color_board, getproperty(cb, color_board) - sqr)
+    nothing
+end
+
+
+function _switch_turn!(cb::ChessBoard)
+    cb.active_color = -cb.active_color
+    cb.our_pieces, cb.their_pieces = cb.their_pieces, cb.our_pieces
+    cb.our_king, cb.their_king = cb.their_king, cb.our_king
+    cb.move_count += 1
+end
+
+# function undo_move(cb::ChessBoard, mv::Move)
+
+# end

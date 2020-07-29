@@ -53,15 +53,42 @@ mutable struct ChessBoard
     castling        :: UInt8
 
     active_color    :: Color_T
+    perspective     :: Color_T
     # TODO: look into having Square(0) be a sentinel value
     en_passant_sqr  :: Union{Square, Nothing}
     half_move_count :: Int64
     move_count      :: Int64
 end
 
+abstract type Direction end
+abstract type UpLeft <: Direction end
+abstract type Up <: Direction end
+abstract type UpRight <: Direction end
+abstract type Right <: Direction end
+abstract type Left <: Direction end
+abstract type DownRight <: Direction end
+abstract type Down <: Direction end
+abstract type DownLeft <: Direction end
+Direction_T = Type{T} where {T<:Direction}
+
+struct MasksAndMagic
+    king_attacks         :: Array{BitBoard}
+    knight_attacks       :: Array{BitBoard}
+
+    bishop_blocker_masks :: Array{BitBoard}
+    bishop_magics        :: Array{UInt64}
+    bishop_shifts        :: Array{UInt8}
+    bishop_attacks       :: Array{Array{BitBoard}}
+
+    rook_blocker_masks   :: Array{BitBoard}
+    rook_magics          :: Array{UInt64}
+    rook_shifts          :: Array{UInt8}
+    rook_attacks         :: Array{Array{BitBoard}}
+end
+
 ##### Constructors
 # BitBoard(board::Integer) = BitBoard(UInt64(board))
-# TODO: look into the efficitency of the 63 &
+# TODO: look into the efficiency of the 63 &
 BitBoard(sqr::Square) = BitBoard(UInt64(1) << (63 & (sqr.sqr_idx - 1)))
 
 Square(rank::Integer, file::Integer) = Square((rank - 1) * 8 + file)

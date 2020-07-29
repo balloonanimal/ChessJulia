@@ -9,6 +9,10 @@ function show(io::IO, sqr::Square)
     print(io, ('a' + (file(sqr) - 1)) * ('1' + (rank(sqr) - 1)))
 end
 
+@inline flip(sqr::Square) = Square(UInt(sqr) ⊻ 56)
+@inline (<<)(sqr::Square, i::Integer) = Square(UInt(sqr) + i)
+@inline (>>)(sqr::Square, i::Integer) = Square(UInt(sqr) - i)
+
 ##### Piece Stuff
 fancy_str(::Type{Pawn}, ::Type{White}) = "♙"
 fancy_str(::Type{Knight}, ::Type{White}) = "♘"
@@ -37,16 +41,36 @@ ascii_str(::Type{Queen}, ::Type{Black}) = "q"
 ascii_str(::Type{King}, ::Type{Black}) = "k"
 
 ##### Color Stuff
-(-)(c::Color_T) = c == White ? Black : White
+(-)(c::Type{White}) = Black
+(-)(c::Type{Black}) = White
 
 ##### ChessBoard Stuff
 board(cb::ChessBoard, c::Color_T) = c == cb.active_color ? :our_pieces : :their_pieces
-board(::ChessBoard, ::Type{Pawn}) = :pawns
-board(::ChessBoard, ::Type{Knight}) = :knights
-board(::ChessBoard, ::Type{Bishop}) = :bishops
-board(::ChessBoard, ::Type{Rook}) = :rooks
-board(::ChessBoard, ::Type{Queen}) = :queens
+board(::Type{Pawn}) = :pawns
+board(::Type{Knight}) = :knights
+board(::Type{Bishop}) = :bishops
+board(::Type{Rook}) = :rooks
+board(::Type{Queen}) = :queens
 board(cb::ChessBoard, c::Color_T, ::Type{King}) = c == :active_color ? :our_king : :their_king
+
+function copy(cb::ChessBoard)
+    ChessBoard(
+        cb.our_pieces,
+        cb.their_pieces,
+        cb.pawns,
+        cb.knights,
+        cb.bishops,
+        cb.rooks,
+        cb.queens,
+        cb.our_king,
+        cb.their_king,
+        cb.castling,
+        cb.active_color,
+        cb.perspective,
+        cb.en_passant_sqr,
+        cb.half_move_count,
+        cb.move_count)
+end
 
 function fen(cb::ChessBoard)
     mb = to_mailbox(cb)
@@ -126,8 +150,12 @@ function ChessBoard(fen::AbstractString)
     #  move count
     move_count = parse_fen_int(split_fen[6])
 
-    ChessBoard(boards..., castling, move,
-               en_passant, half_move_count, move_count)
+    cb = ChessBoard(boards..., castling, White, move,
+                    en_passant, half_move_count, move_count)
+    if cb.active_color == Black
+        flip!(cb)
+    end
+    cb
 end
 
 function parse_fen_board(board_str::AbstractString)
@@ -304,6 +332,8 @@ function piece_on(cb::ChessBoard, sqr::Square)
 end
 
 function to_mailbox(cb::ChessBoard)
+    # flip to white's perspective
+    cb = cb.perspective == White ? copy(cb) : flip(cb)
     # TODO: why doesn't this work?
     # mb = Dict{Square, Tuple{Type{T}, Type{S}}}() where {T <: Color, S <: Piece}
     mb = Dict{Square, Tuple{DataType, DataType}}()
@@ -359,41 +389,51 @@ function Base.show(io::IO, cb::ChessBoard)
     print(io, s)
 end
 
+
 # NOTE: assumes move is legal
 #       also checks for a piece on from sqr, maybe unchecked faster?
-function make_move!(cb::ChessBoard, mv::Move)
+# TODO: check the speed of this
+#       + might be worth making branchless
+#         clear out every board instead of costly
+#         piece lookup
+function make_move(cb::ChessBoard, mv::Move)
+    new_board = copy(cb)
     from_sqr, to_sqr = from(mv), to(mv)
     p1 = piece_on(cb, from_sqr)
+    p2 = piece_on(cb, to_sqr)
+
     if p1 == nothing
         # TODO: replace generic throw
         throw("No piece to move!")
     end
     piece_1, color_1 = p1
     if piece_1 == King
-        king = board(cb, color_1, King)
-        setproperty!(cb, king, from_sqr)
+        new_board.our_king = to_sqr
+        new_board.our_pieces = (new_board.our_pieces ∪ to_sqr) - from_sqr
     else
-        _remove_piece!(cb, from_sqr, piece_1, color_1)
+        _remove_piece!(new_board, from_sqr, piece_1, color_1)
+        _add_piece!(new_board, to_sqr, piece_1, color_1)
     end
 
-    p2 = piece_on(cb, to_sqr)
     if p2 ≠ nothing
         piece_2, color_2 = p2
-        _remove_piece!(cb, to_sqr, piece_2, color_2)
+        _remove_piece!(new_board, to_sqr, piece_2, color_2)
     end
 
-    if p1 ≠ King
-        _add_piece!(cb, to_sqr, piece_1, color_1)
+    # TODO: implement
+    if promotion(mv) ≠ nothing
+        throw("Not implemented yet")
     end
 
-    _switch_turn!(cb)
+    _switch_turn!(new_board)
+    new_board
 end
 
 # NOTE: should never be called with King, assertion is internal logic
 function _add_piece!(cb::ChessBoard, sqr::Square,
                      piece::Piece_T, color::Color_T)
     @assert piece ≠ King
-    piece_board = board(cb, piece)
+    piece_board = board(piece)
     setproperty!(cb, piece_board, getproperty(cb, piece_board) ∪ sqr)
     color_board = board(cb, color)
     setproperty!(cb, color_board, getproperty(cb, color_board) ∪ sqr)
@@ -404,7 +444,7 @@ end
 function _remove_piece!(cb::ChessBoard, sqr::Square,
                         piece::Piece_T, color::Color_T)
     @assert piece ≠ King
-    piece_board = board(cb, piece)
+    piece_board = board(piece)
     setproperty!(cb, piece_board, getproperty(cb, piece_board) - sqr)
     color_board = board(cb, color)
     setproperty!(cb, color_board, getproperty(cb, color_board) - sqr)
@@ -416,9 +456,27 @@ function _switch_turn!(cb::ChessBoard)
     cb.active_color = -cb.active_color
     cb.our_pieces, cb.their_pieces = cb.their_pieces, cb.our_pieces
     cb.our_king, cb.their_king = cb.their_king, cb.our_king
+    flip!(cb)
     cb.move_count += 1
 end
 
-# function undo_move(cb::ChessBoard, mv::Move)
+function flip!(cb::ChessBoard)
+    cb.our_pieces = flip(cb.our_pieces)
+    cb.their_pieces = flip(cb.their_pieces)
+    cb.pawns = flip(cb.pawns)
+    cb.knights = flip(cb.knights)
+    cb.bishops = flip(cb.bishops)
+    cb.rooks = flip(cb.rooks)
+    cb.queens = flip(cb.queens)
+    cb.our_king = flip(cb.our_king)
+    cb.their_king = flip(cb.their_king)
+    cb.castling = ((cb.castling & 0b1100) >> 2) | ((cb.castling & 0b0011) << 2)
+    cb.en_passant_sqr = cb.en_passant_sqr == nothing ? nothing : flip(cb.en_passant_sqr)
+    cb.perspective = -cb.perspective
+end
 
-# end
+function flip(cb::ChessBoard)
+    new_cb = copy(cb)
+    flip!(new_cb)
+    new_cb
+end

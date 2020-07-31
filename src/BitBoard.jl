@@ -51,6 +51,9 @@ show(io::IO, ::MIME"text/plain", bb::BitBoard) = show(io, bb)
 @inline length(b::BitBoard) = count_ones(UInt(b))
 
 function iterate(b::BitBoard, idx=1)
+    if idx ≥ 65
+        return nothing
+    end
     while Square(idx) ∉ b
         if idx == 64
             return nothing
@@ -71,15 +74,15 @@ end
 
 # https://www.chessprogramming.org/Flipping_Mirroring_and_Rotating
 # vertically flips the board, inspiration from lc0
-function flip(b::BitBoard)
-    k1 = 0x00FF00FF00FF00FF
-    k2 = 0x0000FFFF0000FFFF
-    x = UInt(b)
-    x = ((x >> 8 ) & k1) | ((x & k1) << 8)
-    x = ((x >> 16) & k2) | ((x & k2) << 16)
-    x =  (x >> 32)       |  (x       << 32)
-    BitBoard(x)
-end
+# function flip(b::BitBoard)
+#     k1 = 0x00FF00FF00FF00FF
+#     k2 = 0x0000FFFF0000FFFF
+#     x = UInt(b)
+#     x = ((x >> 8 ) & k1) | ((x & k1) << 8)
+#     x = ((x >> 16) & k2) | ((x & k2) << 16)
+#     x =  (x >> 32)       |  (x       << 32)
+#     BitBoard(x)
+# end
 
 function combinations(b::BitBoard)
     indexed_squares = [(i, s) for (i, s) in enumerate(b)]

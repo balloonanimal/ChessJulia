@@ -149,15 +149,6 @@ function find_magics(s::Square, piece::Piece_T)
     (mask, magic, bits, used)
 end
 
-function magic_lookup(s::Square, blockers::BitBoard, ::Type{Bishop})
-    blocker_mask = MASKS_AND_MAGIC.bishop_blocker_masks[UInt(s)]
-    magic = MASKS_AND_MAGIC.bishop_magic[UInt(s)]
-    shift = MASKS_AND_MAGIC.bishop_shifts[UInt(s)]
-    relevant_blockers = blocker_mask ∩ blockers
-    hash = (UInt(relevant_blockers) * magic) >> shift
-    MASKS_AND_MAGIC.bishop_attacks[hash]
-end
-
 # TODO: do bishop and rook need to be here?
 # merge this with magic obj?
 function MasksAndMagic()

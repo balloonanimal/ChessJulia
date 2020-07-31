@@ -19,7 +19,6 @@
            [n for n in 1:64])
 
     @test_throws AssertionError CJ.Square(-1)
-    @test_throws AssertionError CJ.Square(0)
     @test_throws AssertionError CJ.Square(65)
 end
 
@@ -91,12 +90,12 @@ end
         @test_throws CJ.ParseError CJ.parse_fen_move("-")
     end
     @testset "FEN castling" begin
-        @test CJ.parse_fen_castling("KQkq") == 8 + 4 + 2 + 1
-        @test CJ.parse_fen_castling("Qkq") == 8 + 4 + 2
-        @test CJ.parse_fen_castling("Kkq") == 8 + 4 + 1
-        @test CJ.parse_fen_castling("KQk") == 4 + 2 + 1
-        @test CJ.parse_fen_castling("KQq") == 8 + 2 + 1
-        @test CJ.parse_fen_castling("-") == 0
+        @test CJ.parse_fen_castling("KQkq") == CJ.Castling(true, true, true, true)
+        @test CJ.parse_fen_castling("Qkq") == CJ.Castling(false, true, true, true)
+        @test CJ.parse_fen_castling("Kkq") == CJ.Castling(true, false, true, true)
+        @test CJ.parse_fen_castling("KQq") == CJ.Castling(true, true, false, true)
+        @test CJ.parse_fen_castling("KQk") == CJ.Castling(true, true, true, false)
+        @test CJ.parse_fen_castling("-") == CJ.Castling(false, false, false, false)
         @test_throws CJ.ParseError CJ.parse_fen_castling("kqKq")
         @test_throws CJ.ParseError CJ.parse_fen_castling("abc")
     end
@@ -107,48 +106,51 @@ end
         @test_throws CJ.ParseError CJ.parse_fen_en_passant("2a")
     end
     @testset "FEN move count" begin
-        @test CJ.parse_fen_int("12") == 12
-        @test_throws CJ.ParseError CJ.parse_fen_int("-1")
-        @test_throws CJ.ParseError CJ.parse_fen_int("a")
+        @test CJ.parse_fen_moves("0", "0") == (0, 0)
+        @test CJ.parse_fen_moves("6", "12") == (6, 12)
+        # TODO: these throw UndefVarError but the code doesn't???
+        # @test_throws CJ.ParseError CJ.parse_fen_int("2", "-1")
+        # @test_throws CJ.ParseError CJ.parse_fen_int("a", "10")
     end
 
     @testset "FEN board object" begin
     board_1_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
     board_1 = CJ.ChessBoard(board_1_fen)
-    @test board_1.our_pieces == CJ.BitBoard(0x000000000000ffff)
-    @test board_1.their_pieces == CJ.BitBoard(0xffff000000000000)
-    @test board_1.pawns == CJ.BitBoard(0x00ff00000000ff00)
-    @test board_1.knights == CJ.BitBoard(0x4200000000000042)
-    @test board_1.bishops == CJ.BitBoard(0x2400000000000024)
-    @test board_1.rooks == CJ.BitBoard(0x8100000000000081)
-    @test board_1.queens == CJ.BitBoard(0x0800000000000008)
-    @test board_1.our_king == CJ.Square("e1")
-    @test board_1.their_king == CJ.Square("e8")
-    @test board_1.active_color == CJ.White
-    @test board_1.castling == 8 + 4 + 2 + 1
-    @test board_1.en_passant_sqr == nothing
-    @test board_1.half_move_count == 0
-    @test board_1.move_count == 1
+    @test CJ.pieces(board_1, CJ.White) == CJ.BitBoard(0x000000000000ffff)
+    @test CJ.pieces(board_1, CJ.Black) == CJ.BitBoard(0xffff000000000000)
+    @test CJ.pieces(board_1, CJ.Pawn) == CJ.BitBoard(0x00ff00000000ff00)
+    @test CJ.pieces(board_1, CJ.Knight) == CJ.BitBoard(0x4200000000000042)
+    @test CJ.pieces(board_1, CJ.Bishop) == CJ.BitBoard(0x2400000000000024)
+    @test CJ.pieces(board_1, CJ.Rook) == CJ.BitBoard(0x8100000000000081)
+    @test CJ.pieces(board_1, CJ.Queen) == CJ.BitBoard(0x0800000000000008)
+    @test CJ.pieces(board_1, CJ.King, CJ.White) == CJ.Square("e1")
+    @test CJ.pieces(board_1, CJ.King, CJ.Black) == CJ.Square("e8")
+    @test CJ.color(board_1) == CJ.White
+    @test CJ.castling(board_1) == CJ.Castling(true, true, true, true)
+    @test CJ.en_passant(board_1) == CJ.Square(0)
+    @test CJ.inaction(board_1) == 0
+    @test CJ.move(board_1) == 1
     @test CJ.fen(board_1) == board_1_fen
 
     # Nolot P1
-    board_2_fen = "r3qb1k/1b4p1/p2pr2p/3n4/Pnp1N1N1/6RP/1B3PP1/1B1QR1K1 w - - 0 1"
+    board_2_fen = "r3qb1k/1b4p1/p2pr2p/3n4/Pnp1N1N1/6RP/1B3PP1/1B1QR1K1 w - - 3 20"
     board_2 = CJ.ChessBoard(board_2_fen)
-    @test board_2.our_pieces == CJ.BitBoard(0x0000000051c0625a)
-    @test board_2.their_pieces == CJ.BitBoard(0xb142990806000000)
-    @test board_2.pawns == CJ.BitBoard(0x0040890005806000)
-    @test board_2.knights == CJ.BitBoard(0x0000000852000000)
-    @test board_2.bishops == CJ.BitBoard(0x2002000000000202)
-    @test board_2.rooks == CJ.BitBoard(0x0100100000400010)
-    @test board_2.queens == CJ.BitBoard(0x1000000000000008)
-    @test board_2.our_king == CJ.Square("g1")
-    @test board_2.their_king == CJ.Square("h8")
-    @test board_2.active_color == CJ.White
-    @test board_2.castling == 0
-    @test board_2.en_passant_sqr == nothing
-    @test board_2.half_move_count == 0
-    @test board_2.move_count == 1
+    @test CJ.pieces(board_2, CJ.White) == CJ.BitBoard(0x0000000051c0625a)
+    @test CJ.pieces(board_2, CJ.Black) == CJ.BitBoard(0xb142990806000000)
+    @test CJ.pieces(board_2, CJ.Pawn) == CJ.BitBoard(0x0040890005806000)
+    @test CJ.pieces(board_2, CJ.Knight) == CJ.BitBoard(0x0000000852000000)
+    @test CJ.pieces(board_2, CJ.Bishop) == CJ.BitBoard(0x2002000000000202)
+    @test CJ.pieces(board_2, CJ.Rook) == CJ.BitBoard(0x0100100000400010)
+    @test CJ.pieces(board_2, CJ.Queen) == CJ.BitBoard(0x1000000000000008)
+    @test CJ.pieces(board_2, CJ.King, CJ.White) == CJ.Square("g1")
+    @test CJ.pieces(board_2, CJ.King, CJ.Black) == CJ.Square("h8")
+    @test CJ.color(board_2) == CJ.White
+    @test CJ.castling(board_2) == CJ.Castling(false, false, false, false)
+    @test CJ.en_passant(board_2) == CJ.Square(0)
+    @test CJ.inaction(board_2) == 3
+    @test CJ.move(board_2) == 20
     @test CJ.fen(board_2) == board_2_fen
+
     end
 end
 

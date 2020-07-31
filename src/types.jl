@@ -1,3 +1,4 @@
+##### TODO: consider the performance ramifications of making everything immutable
 ##### Definitions
 abstract type Color end
 struct White <: Color end
@@ -14,11 +15,12 @@ abstract type King <: Piece end
 Piece_T = Type{T} where {T<:Piece}
 
 
+# NOTE: Square(0) is a sentinel value for no square
 struct Square
     sqr_idx :: UInt8
 
     function Square(sqr_idx::Integer)
-        @assert 1 ≤ sqr_idx ≤ 64
+        @assert 0 ≤ sqr_idx ≤ 64
         new(UInt8(sqr_idx))
     end
 end
@@ -39,23 +41,25 @@ struct Move
     packed_move :: UInt16
 end
 
+struct Castling
+    data::UInt8
+end
+
 mutable struct ChessBoard
-    our_pieces      :: BitBoard
-    their_pieces    :: BitBoard
+    white_pieces    :: BitBoard
+    black_pieces    :: BitBoard
     pawns           :: BitBoard
     knights         :: BitBoard
     bishops         :: BitBoard
     rooks           :: BitBoard
     queens          :: BitBoard
-    our_king        :: Square
-    their_king      :: Square
+    white_king      :: Square
+    black_king      :: Square
 
-    castling        :: UInt8
+    castling        :: Castling
 
     active_color    :: Color_T
-    perspective     :: Color_T
-    # TODO: look into having Square(0) be a sentinel value
-    en_passant_sqr  :: Union{Square, Nothing}
+    en_passant_sqr  :: Square
     half_move_count :: Int64
     move_count      :: Int64
 end
@@ -100,3 +104,26 @@ function Square(s::AbstractString)
 end
 
 Move(from::Square, to::Square) = Move(UInt(from) - 1 + ((UInt(to) - 1) << 6))
+Castling(K::Bool, Q::Bool, k::Bool, q::Bool) = Castling(
+    (0b0000
+     | (K ? 0b0001 : 0b0000)
+     | (Q ? 0b0010 : 0b0000)
+     | (k ? 0b0100 : 0b0000)
+     | (q ? 0b1000 : 0b0000))
+)
+
+ChessBoard() = ChessBoard(
+        BitBoard(0),
+        BitBoard(0),
+        BitBoard(0),
+        BitBoard(0),
+        BitBoard(0),
+        BitBoard(0),
+        BitBoard(0),
+        Square(0),
+        Square(0),
+        Castling(0),
+        White,
+        Square(0),
+        0,
+        1)

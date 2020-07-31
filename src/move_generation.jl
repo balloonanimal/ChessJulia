@@ -1,56 +1,69 @@
 include("masks_magic.jl")
 
-function pawn_moves_single(cb::ChessBoard)
-    our_pawns = cb.pawns ∩ cb.our_pieces
-    pushed_pawns = (our_pawns << 8) - (cb.our_pieces ∪ cb.their_pieces)
-    promotion_pawns = pushed_pawns ∩ BitBoard(0xff00000000000000)
+function pawn_moves_single(cb::ChessBoard, c::Color_T)
+    pawns = pieces(cb, Pawn, c)
+    shift = c == White ? 8 : -8
+    promotion_mask = c == White ? BitBoard(0xff00000000000000) : BitBoard(0x00000000000000ff)
+    pushed_pawns = (pawns << shift) - pieces(cb)
+    promotion_pawns = pushed_pawns ∩ promotion_mask
 
-    pushes = [Move(s >> 8, s) for s in pushed_pawns - promotion_pawns]
-    knight_promotions = [Move(s >> 8, s, Knight) for s in promotion_pawns]
-    bishop_promotions = [Move(s >> 8, s, Bishop) for s in promotion_pawns]
-    rook_promotions = [Move(s >> 8, s, Rook) for s in promotion_pawns]
-    queen_promotions = [Move(s >> 8, s, Queen) for s in promotion_pawns]
+    pushes = [Move(s >> shift, s) for s in pushed_pawns - promotion_pawns]
+    knight_promotions = [Move(s >> shift, s, Knight) for s in promotion_pawns]
+    bishop_promotions = [Move(s >> shift, s, Bishop) for s in promotion_pawns]
+    rook_promotions = [Move(s >> shift, s, Rook) for s in promotion_pawns]
+    queen_promotions = [Move(s >> shift, s, Queen) for s in promotion_pawns]
     [pushes; knight_promotions; bishop_promotions; rook_promotions; queen_promotions]
 end
 
-function pawn_moves_double(cb::ChessBoard)
-    our_pushable_pawns = cb.pawns ∩ BitBoard(0x000000000000ff00) ∩ cb.our_pieces
-    pushed_pawns = (our_pushable_pawns << 16) - (cb.our_pieces ∪ cb.their_pieces)
+function pawn_moves_double(cb::ChessBoard, c::Color_T)
+    pawns = pieces(cb, Pawn, c)
+    shift = c == White ? 8 : -8
+    unmoved_mask = c == White ? BitBoard(0x000000000000ff00) : BitBoard(0x00ff000000000000)
+    blocker_mask = unmoved_mask << shift
 
-    pushes = [Move(s >> 16, s) for s in pushed_pawns]
+    blocked_files = (pieces(cb) ∩ blocker_mask) >> shift
+    pushable_pawns = (pawns ∩ unmoved_mask) - blocked_files
+    pushed_pawns = (pushable_pawns << (2 * shift)) - pieces(cb)
+
+    pushes = [Move(s >> (2 * shift), s) for s in pushed_pawns]
     pushes
 end
 
-function pawn_moves_attacks(cb::ChessBoard)
-    our_pawns = cb.pawns ∩ cb.our_pieces
+function pawn_moves_attacks(cb::ChessBoard, c::Color_T)
+    pawns = pieces(cb, Pawn, c)
+    left_shift = c == White ? 7 : -9
+    right_shift = c == White ? 9 : -7
     # left
-    not_right_pawns = our_pawns ∩ BitBoard(0xfefefefefefefefe)
-    right_attack_pawns = (not_right_pawns << 9) ∩ cb.their_pieces
-    right_attacks = [Move(s >> 9, s) for s in right_attack_pawns]
+    not_left_pawns = pawns ∩ BitBoard(0xfefefefefefefefe)
+    left_attack_pawns = (not_left_pawns << left_shift) ∩ pieces(cb, !c)
+    left_attacks = [Move(s >> left_shift, s) for s in left_attack_pawns]
     # right
-    not_left_pawns = our_pawns ∩ BitBoard(0x7f7f7f7f7f7f7f7f)
-    left_attack_pawns = (not_left_pawns << 7) ∩ cb.their_pieces
-    left_attacks = [Move(s >> 7, s) for s in left_attack_pawns]
+    not_right_pawns = pawns ∩ BitBoard(0x7f7f7f7f7f7f7f7f)
+    right_attack_pawns = (not_right_pawns << right_shift) ∩ pieces(cb, !c)
+    right_attacks = [Move(s >> right_shift, s) for s in right_attack_pawns]
     [left_attacks; right_attacks]
 end
 
-function pawn_moves(cb::ChessBoard)
-    [pawn_moves_single(cb);
-     pawn_moves_double(cb);
-     pawn_moves_attacks(cb)]
+function pawn_moves(cb::ChessBoard, c::Color_T)
+    [pawn_moves_single(cb, c);
+     pawn_moves_double(cb, c);
+     pawn_moves_attacks(cb, c)]
 end
 
-function king_moves(cb::ChessBoard)
-    moved_kings = MASKS_AND_MAGIC.king_attacks[UInt(cb.our_king)] - cb.our_pieces
-    king_moves = [Move(cb.our_king, s) for s in moved_kings]
+function king_moves(cb::ChessBoard, c::Color_T)
+    our_king = pieces(cb, King, c)
+    our_pieces = pieces(cb, c)
+    moved_kings = MASKS_AND_MAGIC.king_attacks[UInt(our_king)] - our_pieces
+    king_moves = [Move(our_king, s) for s in moved_kings]
 end
 
-function knight_moves(cb::ChessBoard)
-    our_knights = cb.knights ∩ cb.our_pieces
+function knight_moves(cb::ChessBoard, c::Color_T)
+    our_knights = pieces(cb, Knight, c)
+    our_pieces = pieces(cb, c)
     knight_moves = []
     for s in our_knights
         moved_knights = MASKS_AND_MAGIC.knight_attacks[UInt(s)]
-        append!(knight_moves, [Move(s, m) for m in moved_knights - cb.our_pieces])
+        append!(knight_moves, [Move(s, m) for m in moved_knights - our_pieces])
     end
     knight_moves
 end
@@ -65,12 +78,14 @@ function magic_lookup(s::Square, blockers::BitBoard, ::Type{Bishop})
     attacks[hash + 1]
 end
 
-function bishop_moves(cb::ChessBoard)
-    our_bishops = cb.bishops ∩ cb.our_pieces
+function bishop_moves(cb::ChessBoard, c::Color_T)
+    our_bishops = pieces(cb, Bishop, c)
+    all_pieces = pieces(cb)
+    our_pieces = pieces(cb, c)
     bishop_moves = []
     for s in our_bishops
-        bishop_attacks = magic_lookup(s, cb.our_pieces ∪ cb.their_pieces, Bishop)
-        append!(bishop_moves, [Move(s, m) for m in bishop_attacks - cb.our_pieces])
+        bishop_attacks = magic_lookup(s, all_pieces, Bishop)
+        append!(bishop_moves, [Move(s, m) for m in bishop_attacks - our_pieces])
     end
     bishop_moves
 end
@@ -85,36 +100,41 @@ function magic_lookup(s::Square, blockers::BitBoard, ::Type{Rook})
     attacks[hash + 1]
 end
 
-function rook_moves(cb::ChessBoard)
-    our_rooks = cb.rooks ∩ cb.our_pieces
+function rook_moves(cb::ChessBoard, c::Color_T)
+    our_rooks = pieces(cb, Rook, c)
+    all_pieces = pieces(cb)
+    our_pieces = pieces(cb, c)
     rook_moves = []
     for s in our_rooks
-        rook_attacks = magic_lookup(s, cb.our_pieces ∪ cb.their_pieces, Rook)
-        append!(rook_moves, [Move(s, m) for m in rook_attacks - cb.our_pieces])
+        rook_attacks = magic_lookup(s, all_pieces, Rook)
+        append!(rook_moves, [Move(s, m) for m in rook_attacks - our_pieces])
     end
     rook_moves
 end
 
-function queen_moves(cb::ChessBoard)
-    our_queens = cb.queens ∩ cb.our_pieces
+function queen_moves(cb::ChessBoard, c::Color_T)
+    our_queens = pieces(cb, Queen, c)
+    all_pieces = pieces(cb)
+    our_pieces = pieces(cb, c)
     queen_moves = []
     for s in our_queens
-        bishop_attacks = magic_lookup(s, cb.our_pieces ∪ cb.their_pieces, Bishop)
-        append!(queen_moves, [Move(s, m) for m in bishop_attacks - cb.our_pieces])
-        rook_attacks = magic_lookup(s, cb.our_pieces ∪ cb.their_pieces, Rook)
-        append!(queen_moves, [Move(s, m) for m in rook_attacks - cb.our_pieces])
+        bishop_attacks = magic_lookup(s, all_pieces, Bishop)
+        append!(queen_moves, [Move(s, m) for m in bishop_attacks - our_pieces])
+        rook_attacks = magic_lookup(s, all_pieces, Rook)
+        append!(queen_moves, [Move(s, m) for m in rook_attacks - our_pieces])
     end
     queen_moves
 end
 
-function moves(cb::ChessBoard)::Array{Move, 1}
-    [pawn_moves(cb);
-     king_moves(cb);
-     knight_moves(cb);
-     bishop_moves(cb);
-     rook_moves(cb);
-     queen_moves(cb)]
+function moves(cb::ChessBoard, c::Color_T)::Array{Move, 1}
+    [pawn_moves(cb, c);
+     king_moves(cb, c);
+     knight_moves(cb, c);
+     bishop_moves(cb, c);
+     rook_moves(cb, c);
+     queen_moves(cb, c)]
 end
+moves(cb::ChessBoard) = moves(cb, color(cb))
 
 # FIXME: don't do this. This function is the least possible efficient way to
 # check legality. should be one of the first attempts for optimization
@@ -123,8 +143,8 @@ function legal(cb::ChessBoard, mv::Move)
     from_sqr, to_sqr = from(mv), to(mv)
     p1 = piece_on(cb, from_sqr)
     p1 = piece_on(cb, to_sqr)
-    @assert p1 ≠ nothing && p1[2] == cb.active_color
-    @assert p2 == nothing || p1[2] == -cb.active_color
+    @assert p1 ≠ nothing && p1[2] == color(cb)
+    @assert p2 == nothing || p2[2] == !color(cb)
     new_cb = make_move(cb, mv)
     # TODO: need to check much more than this
     !incheck(new_cb, cb.active_color)
@@ -132,7 +152,7 @@ end
 
 function incheck(cb::ChessBoard, color::Color_T)
     new_moves = moves(cb)
-    king = getproperty(cb, board(cb, color, King))
+    king = pieces(cb, King, color)
     for mv_ in new_moves
         if to(mv_) == king
             return true
@@ -142,17 +162,59 @@ function incheck(cb::ChessBoard, color::Color_T)
 end
 # END JANK
 
-function perft(cb::ChessBoard, depth::Integer)
-    if depth == 0
-        return 1
+function perft(cb::ChessBoard, depth::Integer; pretty=false, pretty_depth=1)
+    if pretty
+        n, children = _perft_pretty(cb, depth, pretty_depth)
+        println("$n")
+        println("==========")
+        _print_perft_pretty(children)
+        return n
+    else
+        _perft(cb, depth)
     end
+end
+
+function _perft(cb::ChessBoard, depth::Integer)
     nodes = 0
     plegal_moves = moves(cb)
     for mv in plegal_moves
         new_cb = make_move(cb, mv)
         if !incheck(new_cb, cb.active_color)
-            nodes += perft(new_cb, depth - 1)
+            if depth==1
+                nodes += 1
+            else
+                nodes += perft(new_cb, depth - 1)
+            end
         end
     end
     nodes
+end
+
+function _perft_pretty(cb::ChessBoard, depth::Integer, pretty_depth::Integer)
+    if depth == 0
+        return (1, [])
+    end
+    if pretty_depth == 0
+        return (_perft(cb, depth), [])
+    end
+    plegal_moves = moves(cb)
+    tree = []
+    for mv in plegal_moves
+        new_cb = make_move(cb, mv)
+        if !incheck(new_cb, cb.active_color)
+            n, children = _perft_pretty(new_cb, depth - 1, pretty_depth - 1)
+            push!(tree, (PGN(mv, cb), n, children))
+        end
+    end
+    (sum(c[2] for c in tree), tree)
+end
+
+function _print_perft_pretty(tree; level=0)
+    prefix = "  "^level
+    for (mov, n, children) in tree
+        println("$prefix$mov: $n")
+        if children ≠ []
+            _print_perft_pretty(children, level=level+1)
+        end
+    end
 end
